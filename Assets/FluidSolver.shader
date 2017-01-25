@@ -20,6 +20,7 @@
 	sampler2D	_Buffer;
 	float4		_Buffer_TexelSize;
 	sampler2D	_Buffer2;
+	float4		_Buffer2_TexelSize;
 	float		_Scale;
 	half2		_Offset;
 	float		_Step;
@@ -31,7 +32,16 @@
 	
 	fixed4 boundary(v2f_img i) : SV_Target
 	{
-		return _Scale * tex2D(_Buffer, i.uv + _Offset);
+	    float2 cellOffset = float2(0.0, 0.0);
+    	if(i.uv.x < 0.0)
+    		cellOffset.x = 1.0;
+    	else if(i.uv.x > 1.0)
+    		cellOffset.x = -1.0;
+    	if(i.uv.y < 0.0)
+    		cellOffset.y = 1.0;
+    	else if(i.uv.y > 1.0)
+    		cellOffset.y = -1.0;
+		return _Scale * tex2D(_Buffer, i.uv + _Offset * _Buffer_TexelSize.xy);
 	}
 
 	float4 f4texRECTbilerp(sampler2D tex, float2 s)
@@ -53,7 +63,7 @@
 
 	fixed4 advect(v2f_img i) : SV_Target
 	{
-		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer, i.uv);
+		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
 		return _Dissipation * tex2D(_Buffer, pos);
 	}
 
@@ -74,8 +84,7 @@
 	{
 		half4 vL, vR, vB, vT;
 		h4texRECTneighbors(_Buffer, i.uv, vL, vR, vB, vT);
-		half4 div = _InverseCellSize * 0.5 * (vR.x - vL.x + vT.y - vB.y);
-		div.a = 1.0;
+		half4 div = half4(_InverseCellSize * 0.5 * ((vR.x - vL.x) + (vT.y - vB.y)), 0, 0, 1);
 		return div;
 	}
 
@@ -90,12 +99,43 @@
 		return result;
 	}
 
+	float samplePressue(sampler2D pressure, float2 coord, float invresolution)
+	{
+	    float2 cellOffset = float2(0.0, 0.0);
+
+	    //pure Neumann boundary conditions: 0 pressure gradient across the boundary
+	    //dP/dx = 0
+	    //walls
+	    if(coord.x < 0.0)
+	    	cellOffset.x = 1.0;
+	    else if(coord.x > 1.0)
+	    	cellOffset.x = -1.0;
+	    if(coord.y < 0.0)
+	    	cellOffset.y = 1.0;
+	    else if(coord.y > 1.0)
+	    	cellOffset.y = -1.0;
+
+	    return tex2D(pressure, coord + cellOffset * invresolution).x;
+	}
+
+	fixed4 pressure(v2f_img i) : SV_Target
+	{
+		float L = samplePressue(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0), _Buffer2_TexelSize.x);
+		float R = samplePressue(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0), _Buffer2_TexelSize.x);
+		float B = samplePressue(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y), _Buffer2_TexelSize.y);
+		float T = samplePressue(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y), _Buffer2_TexelSize.y);
+
+		float bC = tex2D(_Buffer2, i.uv).x;
+
+		return float4((L + R + B + T + _PoissonAlphaCoefficient * bC) * .25, 0, 0, 1);
+	}
+
 	fixed4 gradient(v2f_img i) : SV_Target
 	{
 		//pressure = _Buffer2
 		half4 pL, pR, pB, pT;
 		h4texRECTneighbors(_Buffer2, i.uv, pL, pR, pB, pT);
-		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
+		half2 grad = half2(pL.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
 		fixed4 uNew = tex2D(_Buffer, i.uv);
 		uNew.xy -= grad;
 		return uNew;
@@ -152,7 +192,16 @@
 			ENDCG
 		}
 
-		// 4. Gradient
+		// 4. Pressure
+		Pass
+		{
+			CGPROGRAM
+			#pragma vertex vert_img
+			#pragma fragment pressure
+			ENDCG
+		}
+
+		// 5. Gradient
 		Pass
 		{
 			CGPROGRAM
@@ -161,7 +210,7 @@
 			ENDCG
 		}
 
-		// 5. Apply Force
+		// 6. Apply Force
 		Pass
 		{
 			CGPROGRAM
