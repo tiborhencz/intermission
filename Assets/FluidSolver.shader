@@ -135,7 +135,7 @@
 		//pressure = _Buffer2
 		half4 pL, pR, pB, pT;
 		h4texRECTneighbors(_Buffer2, i.uv, pL, pR, pB, pT);
-		half2 grad = half2(pL.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
+		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
 		fixed4 uNew = tex2D(_Buffer, i.uv);
 		uNew.xy -= grad;
 		return uNew;

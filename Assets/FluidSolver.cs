@@ -48,7 +48,8 @@ public class FluidSolver : MonoBehaviour
 		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
 		m_PressureBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
 		m_ColorBuffer = new RenderTexture(ColorTexture.width, ColorTexture.height, 0, RenderTextureFormat.ARGBFloat);
-		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer; //m_ColorBuffer;
+		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer;
+		//GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
 		ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
 		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
 		Graphics.Blit(ColorTexture, m_ColorBuffer);
