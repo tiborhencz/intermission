@@ -74,16 +74,20 @@
 	{
 		half4 vL, vR, vB, vT;
 		h4texRECTneighbors(_Buffer, i.uv, vL, vR, vB, vT);
-		return _InverseCellSize * 0.5 * (vR.x - vL.x + vT.y - vB.y);
+		half4 div = _InverseCellSize * 0.5 * (vR.x - vL.x + vT.y - vB.y);
+		div.a = 1.0;
+		return div;
 	}
 
 	fixed4 poissonSolver(v2f_img i) : SV_Target
 	{
-		//x = _Buffer (Ax = b)
+		//x = _Buffer; (Ax = b)
 		half4 xL, xR, xB, xT;
 		h4texRECTneighbors(_Buffer, i.uv, xL, xR, xB, xT);
 		half4 bC = tex2D(_Buffer2, i.uv);
-		return (xL + xR + xB + xT + _PoissonAlphaCoefficient * bC) * _InversePoissonBetaCoefficient;
+		half4 result = (xL + xR + xB + xT + _PoissonAlphaCoefficient * bC) * _InversePoissonBetaCoefficient;
+		result.a = 1.0;
+		return result;
 	}
 
 	fixed4 gradient(v2f_img i) : SV_Target

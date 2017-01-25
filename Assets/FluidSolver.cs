@@ -31,39 +31,28 @@ public class FluidSolver : MonoBehaviour
 	public float viscosity = 1f;
 
 	public Material m_FluidSolver;
-	private RenderTexture m_VelocityBuffer1;
-	private RenderTexture m_VelocityBuffer2;
+	private RenderTexture m_VelocityBuffer;
 	private RenderTexture m_DivergenceBuffer;
-	private RenderTexture m_TextureBuffer;
+	private RenderTexture m_PressureBuffer;
 	private int m_BufferIndex = 0;
 	private float m_GridScale = 1f;
 
 	void Start()
 	{
 		m_FluidSolver = new Material(shader);
-		m_VelocityBuffer1 = new RenderTexture(128, 128, 0, RenderTextureFormat.ARGBFloat);
-		m_VelocityBuffer2 = new RenderTexture(128, 128, 0, RenderTextureFormat.ARGBFloat);
-		m_DivergenceBuffer = new RenderTexture(m_VelocityBuffer1.width, m_VelocityBuffer1.height, 0, RenderTextureFormat.ARGBFloat);
-		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer1;
+		int width = 128;
+		int height = 128;
+		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		m_PressureBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer;
 		ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
-		Graphics.Blit(m_VelocityBuffer2, m_VelocityBuffer1);
+		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
 	}
 
 	void Blit(SolverPass pass)
 	{
-		if (m_BufferIndex == 0)
-		{
-			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer1);
-			m_FluidSolver.SetTexture(Properties.Buffer2, m_VelocityBuffer1);
-			Graphics.Blit(m_VelocityBuffer1, m_VelocityBuffer2, m_FluidSolver, (int)pass);
-		}
-		else
-		{
-			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer2);
-			m_FluidSolver.SetTexture(Properties.Buffer2, m_VelocityBuffer2);
-			Graphics.Blit(m_VelocityBuffer2, m_VelocityBuffer1, m_FluidSolver, (int)pass);
-		}
-		m_BufferIndex = Mathf.Abs(m_BufferIndex - 1);
+		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer, m_FluidSolver, (int)pass);
 	}
 
 	void ApplyForce(Vector2 position, Vector2 direction)
@@ -81,13 +70,13 @@ public class FluidSolver : MonoBehaviour
 		Blit(SolverPass.Advection);
 	}
 
-	void Poisson(float step)
+	void Poisson(float step, int iterations)
 	{
 		float centerFactor = m_GridScale * m_GridScale / (viscosity * step);
 		float stencilFactor = 1.0f / (4.0f + centerFactor);
 		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, centerFactor);
 		m_FluidSolver.SetFloat(Properties.InversePoissonBetaCoefficient, stencilFactor);
-		for (int i = 0; i < 20; i++)
+		for (int i = 0; i < iterations; i++)
 			Blit(SolverPass.PoissonSolver);
 	}
 
@@ -95,34 +84,49 @@ public class FluidSolver : MonoBehaviour
 	{
 		if (m_BufferIndex == 0)
 		{
-			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer2);
+			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer);
 		}
 		else
 		{
-			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer1);
+			m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer);
 		}
 		m_FluidSolver.SetFloat(Properties.InverseCellSize, 1f / m_GridScale);
-		Graphics.Blit(m_VelocityBuffer1, m_DivergenceBuffer, m_FluidSolver, (int)SolverPass.Divergence);
-		/*
+		Graphics.Blit(m_VelocityBuffer, m_DivergenceBuffer, m_FluidSolver, (int)SolverPass.Divergence);
+
 		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale);
-		m_FluidSolver.SetFloat(Properties.InversePoissonBetaCoefficient, 0.25);
+		m_FluidSolver.SetFloat(Properties.InversePoissonBetaCoefficient, 0.25f);
+		m_FluidSolver.SetTexture(Properties.Buffer2, m_DivergenceBuffer);
 		for (int i = 0; i < 20; i++)
 		{
-			m_FluidSolver.SetTexture(Properties.Buffer2, m_VelocityBuffer2);
-			Blit(SolverPass.PoissonSolver);
-		}*/
+			Graphics.Blit(m_PressureBuffer, m_PressureBuffer, m_FluidSolver, (int)SolverPass.PoissonSolver);
+		}
+	}
+
+	void Gradient()
+	{
+		m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer);
+		m_FluidSolver.SetTexture(Properties.Buffer2, m_PressureBuffer);
+		m_FluidSolver.SetFloat(Properties.InverseCellSize, 1f / m_GridScale);
+		Graphics.Blit(m_PressureBuffer, m_VelocityBuffer, m_FluidSolver, (int)SolverPass.Gradient);
 	}
 
 	void Update()
 	{
 		Advect(Time.deltaTime, 1f);
-		Poisson(Time.deltaTime);
+		Poisson(Time.deltaTime, 0);
 
 		if (Input.GetMouseButton(0))
 		{
-			ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
+			ApplyForce(new Vector2(Input.mousePosition.x / (float)Screen.width, Input.mousePosition.y / (float)Screen.height), new Vector2(1f, 1f));
 		}
 		Divergence(Time.deltaTime);
+		Gradient();
+	}
 
+	void OnGUI()
+	{
+		//Graphics.DrawTexture(new Rect(000, 0, 100, 100), m_VelocityBuffer);
+		//Graphics.DrawTexture(new Rect(100, 0, 100, 100), m_PressureBuffer);
+		Graphics.DrawTexture(new Rect(200, 0, 100, 100), m_DivergenceBuffer);
 	}
 }
