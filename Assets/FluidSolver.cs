@@ -54,7 +54,7 @@ public class FluidSolver : MonoBehaviour
 		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
 		ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
 		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
-		Graphics.Blit(ColorTexture, m_ColorBuffer);
+		Graphics.Blit(Texture2D.blackTexture, m_ColorBuffer);
 	}
 
 	void ApplyForce(Vector2 position, Vector2 direction)

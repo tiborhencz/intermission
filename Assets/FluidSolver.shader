@@ -105,21 +105,7 @@
 
 	float samplePressue(sampler2D pressure, float2 coord, float invresolution)
 	{
-	    float2 cellOffset = float2(0.0, 0.0);
-
-	    //pure Neumann boundary conditions: 0 pressure gradient across the boundary
-	    //dP/dx = 0
-	    //walls
-	    if(coord.x < 0.0)
-	    	cellOffset.x = 1.0;
-	    else if(coord.x > 1.0)
-	    	cellOffset.x = -1.0;
-	    if(coord.y < 0.0)
-	    	cellOffset.y = 1.0;
-	    else if(coord.y > 1.0)
-	    	cellOffset.y = -1.0;
-
-	    return tex2D(pressure, coord - cellOffset * invresolution).x;
+		return tex2D(pressure, coord).x;
 	}
 
 	fixed4 pressure(v2f_img i) : SV_Target
@@ -142,7 +128,10 @@
 		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
 		fixed4 uNew = tex2D(_Buffer, i.uv);
 		uNew.xy -= grad;
-		return uNew;
+		return uNew * !(i.uv.x < _Buffer_TexelSize.x * 1.5 ||
+			i.uv.x > 1 - _Buffer_TexelSize.x * 1.5 ||
+			i.uv.y < _Buffer_TexelSize.y * 1.5 ||
+			i.uv.y > 1 - _Buffer_TexelSize.y * 1.5);
 	}
 
 	fixed4 applyForce(v2f_img i) : SV_Target
