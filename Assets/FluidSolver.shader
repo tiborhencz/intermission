@@ -12,6 +12,8 @@
 		_PoissonAlphaCoefficient ("Poisson Alpha Coefficient", Float) = 1
 		_InversePoissonBetaCoefficient ("Inverse Poisson Beta Coefficient", Float) = 1
 		_Force ("Force", Vector) = (0, 0, 0, 0)
+		_InjectColor ("Inject Color", Color) = (1, 1, 1, 1)
+		_InjectPosition ("Inject Position", Vector) = (0, 0, 0, 0)
 	}
 
 	CGINCLUDE
@@ -29,6 +31,8 @@
 	float		_PoissonAlphaCoefficient;
 	float		_InversePoissonBetaCoefficient;
 	float4		_Force;
+	fixed4		_InjectColor;
+	float2		_InjectPosition;
 	
 	fixed4 boundary(v2f_img i) : SV_Target
 	{
@@ -115,7 +119,7 @@
 	    else if(coord.y > 1.0)
 	    	cellOffset.y = -1.0;
 
-	    return tex2D(pressure, coord + cellOffset * invresolution).x;
+	    return tex2D(pressure, coord - cellOffset * invresolution).x;
 	}
 
 	fixed4 pressure(v2f_img i) : SV_Target
@@ -145,8 +149,26 @@
 	{
 		fixed4 velocity = tex2D(_Buffer, i.uv);
 		if (distance(i.uv, _Force.xy) < 0.1)
-			velocity.xy = _Force.zw;
+		{
+		//	if (i.uv.x < _Force.x)
+				velocity.xy = _Force.zw;
+		//	else
+			//velocity.xy = -_Force.zw;
+		}
 		return velocity;
+	}
+
+	fixed4 injectColor(v2f_img i) : SV_Target
+	{
+		fixed4 col = tex2D(_Buffer, i.uv);
+		if (distance(i.uv, _InjectPosition.xy) < 0.1)
+		{
+			return _InjectColor;
+		}
+		else
+		{
+			return col;
+		}
 	}
 
 	ENDCG
@@ -174,16 +196,7 @@
 			ENDCG
 		}
 
-		// 2. Poisson Solver (Viscosity)
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert_img
-			#pragma fragment poissonSolver
-			ENDCG
-		}
-
-		// 3. Divergence
+		// 2. Divergence
 		Pass
 		{
 			CGPROGRAM
@@ -192,7 +205,7 @@
 			ENDCG
 		}
 
-		// 4. Pressure
+		// 3. Pressure
 		Pass
 		{
 			CGPROGRAM
@@ -201,7 +214,7 @@
 			ENDCG
 		}
 
-		// 5. Gradient
+		// 4. Gradient
 		Pass
 		{
 			CGPROGRAM
@@ -210,12 +223,21 @@
 			ENDCG
 		}
 
-		// 6. Apply Force
+		// 5. Apply Force
 		Pass
 		{
 			CGPROGRAM
 			#pragma vertex vert_img
 			#pragma fragment applyForce
+			ENDCG
+		}
+
+		// 6. Inject Color
+		Pass
+		{
+			CGPROGRAM
+			#pragma vertex vert_img
+			#pragma fragment injectColor
 			ENDCG
 		}
 	}

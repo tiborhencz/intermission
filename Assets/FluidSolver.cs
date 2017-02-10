@@ -7,11 +7,11 @@ public class FluidSolver : MonoBehaviour
 	{
 		Boundary = 0,
 		Advection = 1,
-		PoissonSolver = 2,
-		Divergence = 3,
-		Pressure = 4,
-		Gradient = 5,
-		ApplyForce = 6
+		Divergence = 2,
+		Pressure = 3,
+		Gradient = 4,
+		ApplyForce = 5,
+		InjectColor = 6
 	}
 
 	class Properties
@@ -24,8 +24,9 @@ public class FluidSolver : MonoBehaviour
 		public static int InverseCellSize = Shader.PropertyToID("_InverseCellSize");
 		public static int Dissipation = Shader.PropertyToID("_Dissipation");
 		public static int PoissonAlphaCoefficient = Shader.PropertyToID("_PoissonAlphaCoefficient");
-		public static int InversePoissonBetaCoefficient = Shader.PropertyToID("_InversePoissonBetaCoefficient");
 		public static int Force = Shader.PropertyToID("_Force");
+		public static int InjectColor = Shader.PropertyToID("_InjectColor");
+		public static int InjectPosition = Shader.PropertyToID("_InjectPosition");
 	}
 
 	public Shader shader;
@@ -45,11 +46,12 @@ public class FluidSolver : MonoBehaviour
 		int width = 256;
 		int height = 256;
 		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		//m_VelocityBuffer.filterMode = FilterMode.Point;
 		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
 		m_PressureBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		m_ColorBuffer = new RenderTexture(ColorTexture.width, ColorTexture.height, 0, RenderTextureFormat.ARGBFloat);
+		m_ColorBuffer = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGBFloat);
 		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer;
-		//GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
+		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
 		ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
 		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
 		Graphics.Blit(ColorTexture, m_ColorBuffer);
@@ -63,6 +65,14 @@ public class FluidSolver : MonoBehaviour
 		Debug.Log("Blited" + position);
 	}
 
+	void InjectColor(Vector2 position, Color color)
+	{
+		m_FluidSolver.SetVector(Properties.InjectPosition, new Vector4(position.x, position.y, 0, 0));
+		m_FluidSolver.SetColor(Properties.InjectColor, color);
+		m_FluidSolver.SetTexture(Properties.Buffer, m_ColorBuffer);
+		Graphics.Blit(m_ColorBuffer, m_ColorBuffer, m_FluidSolver, (int)SolverPass.InjectColor);
+	}
+
 	void Advect(float step, float dissipation, RenderTexture target)
 	{
 		m_FluidSolver.SetFloat(Properties.Step, step);
@@ -71,19 +81,6 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetTexture(Properties.Buffer, target);
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_VelocityBuffer);
 		Graphics.Blit(target, target, m_FluidSolver, (int)SolverPass.Advection);
-	}
-
-	void Poisson(float step, int iterations)
-	{
-		float centerFactor = m_GridScale * m_GridScale / (viscosity * step);
-		float stencilFactor = 1.0f / (4.0f + centerFactor);
-		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, centerFactor);
-		m_FluidSolver.SetFloat(Properties.InversePoissonBetaCoefficient, stencilFactor);
-		m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer);
-		for (int i = 0; i < iterations; i++)
-		{
-			Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer, m_FluidSolver, (int)SolverPass.PoissonSolver);
-		}
 	}
 
 	void Divergence(float step)
@@ -95,9 +92,10 @@ public class FluidSolver : MonoBehaviour
 
 	void Pressure()
 	{
-		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale);
+		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale * viscosity);
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_DivergenceBuffer);
-		for (int i = 0; i < 20; i++)
+		m_FluidSolver.SetTexture(Properties.Buffer, m_PressureBuffer);
+		for (int i = 0; i < 40; i++)
 		{
 			//Boundary(m_PressureBuffer, 1);
 			Graphics.Blit(m_PressureBuffer, m_PressureBuffer, m_FluidSolver, (int)SolverPass.Pressure);
@@ -123,12 +121,14 @@ public class FluidSolver : MonoBehaviour
 	{
 		Advect(Time.deltaTime, 1f, m_VelocityBuffer);
 
-		if (Input.GetMouseButton(0))
+		if (Input.GetMouseButton(0))// && Time.frameCount % 2 == 0)
 		{
 			Vector2 mouseDelta = (Vector2)Input.mousePosition - lastMousePosition;
-			ApplyForce(new Vector2(Input.mousePosition.x / (float)Screen.width, Input.mousePosition.y / (float)Screen.height),
-				//new Vector2(mouseDelta.x / (float)Screen.width, mouseDelta.y / (float)Screen.height));
-				new Vector2(0, 1));
+			Vector2 pos = new Vector2(Input.mousePosition.x / (float)Screen.width, Input.mousePosition.y / (float)Screen.height);
+			ApplyForce(pos,
+				//
+				mouseDelta / 20);
+			InjectColor(pos, new Color(Time.time % 1f, (Time.time + 0.5f) % 1f, (Time.time + 0.25f) % 1f));
 		}
 		lastMousePosition = Input.mousePosition;
 
@@ -138,7 +138,7 @@ public class FluidSolver : MonoBehaviour
 		Advect(Time.deltaTime, 1f, m_ColorBuffer);
 	}
 
-	void OnGUI()
+	void _OnGUI()
 	{
 		Graphics.DrawTexture(new Rect(000, 0, 100, 100), m_VelocityBuffer);
 		Graphics.DrawTexture(new Rect(100, 0, 100, 100), m_PressureBuffer);
