@@ -37,10 +37,23 @@
 
 	float getBoundary(float2 uv)
 	{
-		return (uv.x > _Buffer_TexelSize.x * 1.5 &&
+		return 1 || (uv.x > _Buffer_TexelSize.x * 1.5 &&
 			uv.x < 1 - _Buffer_TexelSize.x * 1.5 &&
 			uv.y > _Buffer_TexelSize.y * 1.5 &&
 			uv.y < 1 - _Buffer_TexelSize.y * 1.5);
+	}
+
+	float getBoundary(float2 uv, float boundary)
+	{
+		return (uv.x > _Buffer_TexelSize.x * boundary &&
+			uv.x < 1 - _Buffer_TexelSize.x * boundary &&
+			uv.y > _Buffer_TexelSize.y * boundary &&
+			uv.y < 1 - _Buffer_TexelSize.y * boundary);
+	}
+
+	fixed4 sampleBoundary(sampler2D tex, float2 uv)
+	{
+		return tex2D(tex, uv);
 	}
 
 	fixed4 boundary(v2f_img i) : SV_Target
@@ -65,10 +78,10 @@
 
 		float2 t = s - st.xy; //interpolating factors 
 
-		float4 tex11 = tex2D(tex, st.xy);
-		float4 tex21 = tex2D(tex, st.zy);
-		float4 tex12 = tex2D(tex, st.xw);
-		float4 tex22 = tex2D(tex, st.zw);
+		float4 tex11 = sampleBoundary(tex, st.xy);
+		float4 tex21 = sampleBoundary(tex, st.zy);
+		float4 tex12 = sampleBoundary(tex, st.xw);
+		float4 tex22 = sampleBoundary(tex, st.zw);
 
 		// bilinear interpolation
 		return lerp(lerp(tex11, tex21, t.x), lerp(tex12, tex22, t.x), t.y);
@@ -77,7 +90,7 @@
 	fixed4 advect(v2f_img i) : SV_Target
 	{
 		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
-		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(i.uv);
+		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(pos, 0);
 	}
 
 	void h4texRECTneighbors(sampler2D tex, half2 s,
@@ -86,10 +99,10 @@
                         out half4 bottom,
                         out half4 top)
 	{
-	  left   = tex2D(tex, s - half2(_Buffer_TexelSize.x, 0)); 
-	  right  = tex2D(tex, s + half2(_Buffer_TexelSize.x, 0));
-	  bottom = tex2D(tex, s - half2(0, _Buffer_TexelSize.y));
-	  top    = tex2D(tex, s + half2(0, _Buffer_TexelSize.y));
+	  left   = sampleBoundary(tex, s - half2(_Buffer_TexelSize.x, 0)); 
+	  right  = sampleBoundary(tex, s + half2(_Buffer_TexelSize.x, 0));
+	  bottom = sampleBoundary(tex, s - half2(0, _Buffer_TexelSize.y));
+	  top    = sampleBoundary(tex, s + half2(0, _Buffer_TexelSize.y));
 	}
 
 
@@ -119,10 +132,10 @@
 
 	fixed4 pressure(v2f_img i) : SV_Target
 	{
-		float L = samplePressue(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0), _Buffer2_TexelSize.x);
-		float R = samplePressue(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0), _Buffer2_TexelSize.x);
-		float B = samplePressue(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y), _Buffer2_TexelSize.y);
-		float T = samplePressue(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y), _Buffer2_TexelSize.y);
+		float L = sampleBoundary(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0)).x;
+		float R = sampleBoundary(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0)).x;
+		float B = sampleBoundary(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y)).x;
+		float T = sampleBoundary(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y)).x;
 
 		float bC = tex2D(_Buffer2, i.uv).x;
 
@@ -137,7 +150,7 @@
 		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
 		fixed4 uNew = tex2D(_Buffer, i.uv);
 		uNew.xy -= grad;
-		return uNew;
+		return uNew * getBoundary(i.uv);
 	}
 
 	fixed4 applyForce(v2f_img i) : SV_Target
@@ -146,7 +159,7 @@
 		if (distance(i.uv, _Force.xy) < 0.1)
 		{
 		//	if (i.uv.x < _Force.x)
-				velocity.xy = _Force.zw;
+				velocity.xy = _Force.zw * getBoundary(i.uv);
 		//	else
 			//velocity.xy = -_Force.zw;
 		}
@@ -158,7 +171,7 @@
 		fixed4 col = tex2D(_Buffer, i.uv);
 		if (distance(i.uv, _InjectPosition.xy) < 0.1)
 		{
-			return _InjectColor;
+			return _InjectColor * getBoundary(i.uv);
 		}
 		else
 		{
