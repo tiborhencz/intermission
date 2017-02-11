@@ -34,6 +34,15 @@
 	fixed4		_InjectColor;
 	float2		_InjectPosition;
 	
+
+	float getBoundary(float2 uv)
+	{
+		return (uv.x > _Buffer_TexelSize.x * 1.5 &&
+			uv.x < 1 - _Buffer_TexelSize.x * 1.5 &&
+			uv.y > _Buffer_TexelSize.y * 1.5 &&
+			uv.y < 1 - _Buffer_TexelSize.y * 1.5);
+	}
+
 	fixed4 boundary(v2f_img i) : SV_Target
 	{
 	    float2 cellOffset = float2(0.0, 0.0);
@@ -68,7 +77,7 @@
 	fixed4 advect(v2f_img i) : SV_Target
 	{
 		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
-		return _Dissipation * tex2D(_Buffer, pos);
+		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(i.uv);
 	}
 
 	void h4texRECTneighbors(sampler2D tex, half2 s,
@@ -128,10 +137,7 @@
 		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
 		fixed4 uNew = tex2D(_Buffer, i.uv);
 		uNew.xy -= grad;
-		return uNew * !(i.uv.x < _Buffer_TexelSize.x * 1.5 ||
-			i.uv.x > 1 - _Buffer_TexelSize.x * 1.5 ||
-			i.uv.y < _Buffer_TexelSize.y * 1.5 ||
-			i.uv.y > 1 - _Buffer_TexelSize.y * 1.5);
+		return uNew;
 	}
 
 	fixed4 applyForce(v2f_img i) : SV_Target
