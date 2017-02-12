@@ -43,8 +43,8 @@ public class FluidSolver : MonoBehaviour
 	void Start()
 	{
 		m_FluidSolver = new Material(shader);
-		int width = 32;
-		int height = 32;
+		int width = Screen.width / 2;
+		int height = Screen.height / 2;
 		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
 		Debug.Log(Screen.width * Screen.height);
 		//m_VelocityBuffer.filterMode = FilterMode.Point;
@@ -95,7 +95,7 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale * viscosity);
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_DivergenceBuffer);
 		m_FluidSolver.SetTexture(Properties.Buffer, m_PressureBuffer);
-		for (int i = 0; i < 4; i++)
+		for (int i = 0; i < 40; i++)
 		{
 			//Boundary(m_PressureBuffer, 1);
 			Graphics.Blit(m_PressureBuffer, m_PressureBuffer, m_FluidSolver, (int)SolverPass.Pressure);

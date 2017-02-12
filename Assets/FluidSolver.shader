@@ -156,7 +156,7 @@
 	fixed4 applyForce(v2f_img i) : SV_Target
 	{
 		fixed4 velocity = tex2D(_Buffer, i.uv);
-		if (distance(i.uv, _Force.xy) < 0.05)
+		if (distance(i.uv, _Force.xy) < 0.1)
 		{
 		//	if (i.uv.x < _Force.x)
 				velocity.xy = _Force.zw * getBoundary(i.uv);
