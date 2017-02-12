@@ -90,7 +90,7 @@
 	fixed4 advect(v2f_img i) : SV_Target
 	{
 		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
-		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(pos, 0);
+		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(pos, 1.5);
 	}
 
 	void h4texRECTneighbors(sampler2D tex, half2 s,
@@ -156,7 +156,7 @@
 	fixed4 applyForce(v2f_img i) : SV_Target
 	{
 		fixed4 velocity = tex2D(_Buffer, i.uv);
-		if (distance(i.uv, _Force.xy) < 0.1)
+		if (distance(i.uv, _Force.xy) < 0.05)
 		{
 		//	if (i.uv.x < _Force.x)
 				velocity.xy = _Force.zw * getBoundary(i.uv);

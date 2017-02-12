@@ -43,9 +43,10 @@ public class FluidSolver : MonoBehaviour
 	void Start()
 	{
 		m_FluidSolver = new Material(shader);
-		int width = 256;
-		int height = 256;
+		int width = 32;
+		int height = 32;
 		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		Debug.Log(Screen.width * Screen.height);
 		//m_VelocityBuffer.filterMode = FilterMode.Point;
 		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
 		m_PressureBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
@@ -62,7 +63,6 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetVector(Properties.Force, new Vector4(position.x, position.y, direction.x, direction.y));
 		m_FluidSolver.SetTexture(Properties.Buffer, m_VelocityBuffer);
 		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer, m_FluidSolver, (int)SolverPass.ApplyForce);
-		Debug.Log("Blited" + position);
 	}
 
 	void InjectColor(Vector2 position, Color color)
@@ -95,7 +95,7 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale * viscosity);
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_DivergenceBuffer);
 		m_FluidSolver.SetTexture(Properties.Buffer, m_PressureBuffer);
-		for (int i = 0; i < 40; i++)
+		for (int i = 0; i < 4; i++)
 		{
 			//Boundary(m_PressureBuffer, 1);
 			Graphics.Blit(m_PressureBuffer, m_PressureBuffer, m_FluidSolver, (int)SolverPass.Pressure);
@@ -119,7 +119,7 @@ public class FluidSolver : MonoBehaviour
 	Vector2 lastMousePosition;
 	void Update()
 	{
-		Advect(Time.deltaTime, 1f, m_VelocityBuffer);
+		Advect(Time.deltaTime, 0.999f, m_VelocityBuffer);
 
 		if (Input.GetMouseButton(0))// && Time.frameCount % 2 == 0)
 		{
@@ -135,7 +135,7 @@ public class FluidSolver : MonoBehaviour
 		Divergence(Time.deltaTime);
 		Pressure();
 		Gradient();
-		Advect(Time.deltaTime, 1f, m_ColorBuffer);
+		Advect(Time.deltaTime, 0.999f, m_ColorBuffer);
 	}
 
 	void _OnGUI()
