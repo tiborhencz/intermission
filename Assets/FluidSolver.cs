@@ -5,13 +5,12 @@ public class FluidSolver : MonoBehaviour
 {
 	enum SolverPass
 	{
-		Boundary = 0,
-		Advection = 1,
-		Divergence = 2,
-		Pressure = 3,
-		Gradient = 4,
-		ApplyForce = 5,
-		InjectColor = 6
+		Advection = 0,
+		Divergence = 1,
+		Pressure = 2,
+		Gradient = 3,
+		ApplyForce = 4,
+		InjectColor = 5
 	}
 
 	class Properties
@@ -31,6 +30,8 @@ public class FluidSolver : MonoBehaviour
 
 	public Shader shader;
 	public float viscosity = 1f;
+	[Range(1, 50)]
+	public int iterations = 20;
 
 	public Material m_FluidSolver;
 	public Texture ColorTexture;
@@ -43,9 +44,10 @@ public class FluidSolver : MonoBehaviour
 	void Start()
 	{
 		m_FluidSolver = new Material(shader);
-		int width = Screen.width / 2;
-		int height = Screen.height / 2;
+		int width = 32;
+		int height = 32;
 		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		m_VelocityBuffer.filterMode = FilterMode.Bilinear;
 		Debug.Log(Screen.width * Screen.height);
 		//m_VelocityBuffer.filterMode = FilterMode.Point;
 		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
@@ -53,6 +55,7 @@ public class FluidSolver : MonoBehaviour
 		m_ColorBuffer = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGBFloat);
 		GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer;
 		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
+		//GetComponent<MeshRenderer>().material.mainTexture = m_PressureBuffer;
 		ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
 		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
 		Graphics.Blit(Texture2D.blackTexture, m_ColorBuffer);
@@ -95,7 +98,7 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale * viscosity);
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_DivergenceBuffer);
 		m_FluidSolver.SetTexture(Properties.Buffer, m_PressureBuffer);
-		for (int i = 0; i < 40; i++)
+		for (int i = 0; i < iterations; i++)
 		{
 			//Boundary(m_PressureBuffer, 1);
 			Graphics.Blit(m_PressureBuffer, m_PressureBuffer, m_FluidSolver, (int)SolverPass.Pressure);
@@ -108,12 +111,6 @@ public class FluidSolver : MonoBehaviour
 		m_FluidSolver.SetTexture(Properties.Buffer2, m_PressureBuffer);
 		m_FluidSolver.SetFloat(Properties.InverseCellSize, 1f / m_GridScale);
 		Graphics.Blit(m_PressureBuffer, m_VelocityBuffer, m_FluidSolver, (int)SolverPass.Gradient);
-	}
-
-	void Boundary(RenderTexture tex, float scale)
-	{
-		m_FluidSolver.SetFloat(Properties.Scale, scale);
-		Graphics.Blit(tex, tex, m_FluidSolver, (int)SolverPass.Boundary);
 	}
 
 	Vector2 lastMousePosition;

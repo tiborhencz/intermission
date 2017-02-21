@@ -33,135 +33,103 @@
 	float4		_Force;
 	fixed4		_InjectColor;
 	float2		_InjectPosition;
-	
 
-	float getBoundary(float2 uv)
+	float2 sampleVelocity(sampler2D tex, float2 uv)
 	{
-		return 1 || (uv.x > _Buffer_TexelSize.x * 1.5 &&
-			uv.x < 1 - _Buffer_TexelSize.x * 1.5 &&
-			uv.y > _Buffer_TexelSize.y * 1.5 &&
-			uv.y < 1 - _Buffer_TexelSize.y * 1.5);
+		float2 offset = 0;
+		float2 scale = 1;
+		if (uv.x < 0)
+		{
+			offset.x = 1;
+			scale.x = -1;
+		}
+		else if (uv.x > 1)
+		{
+			offset.x = -1;
+			scale.x = -1;
+		}
+		if (uv.y < 0)
+		{
+			offset.y = 1;
+			scale.y = -1;
+		}
+		else if (uv.y > 1)
+		{
+			offset.y = -1;
+			scale.y = -1;
+		}
+		return scale * tex2D(tex, uv + offset * _Buffer_TexelSize).xy;
 	}
 
-	float getBoundary(float2 uv, float boundary)
+	float samplePressure(sampler2D tex, float2 uv)
 	{
-		return (uv.x > _Buffer_TexelSize.x * boundary &&
-			uv.x < 1 - _Buffer_TexelSize.x * boundary &&
-			uv.y > _Buffer_TexelSize.y * boundary &&
-			uv.y < 1 - _Buffer_TexelSize.y * boundary);
+		float2 offset = 0;
+		if (uv.x < 0)
+		{
+			offset.x = 1;
+		}
+		else if (uv.x > 1)
+		{
+			offset.x = -1;
+		}
+		if (uv.y < 0)
+		{
+			offset.y = 1;
+		}
+		else if (uv.y > 1)
+		{
+			offset.y = -1;
+		}
+		return tex2D(tex, uv + offset * _Buffer_TexelSize).x;
 	}
 
-	fixed4 sampleBoundary(sampler2D tex, float2 uv)
-	{
-		return tex2D(tex, uv);
-	}
-
-	fixed4 boundary(v2f_img i) : SV_Target
-	{
-	    float2 cellOffset = float2(0.0, 0.0);
-    	if(i.uv.x < 0.0)
-    		cellOffset.x = 1.0;
-    	else if(i.uv.x > 1.0)
-    		cellOffset.x = -1.0;
-    	if(i.uv.y < 0.0)
-    		cellOffset.y = 1.0;
-    	else if(i.uv.y > 1.0)
-    		cellOffset.y = -1.0;
-		return _Scale * tex2D(_Buffer, i.uv + _Offset * _Buffer_TexelSize.xy);
-	}
-
-	float4 f4texRECTbilerp(sampler2D tex, float2 s)
-	{
-		float4 st;
-		st.xy = floor(s - 0.5 * _Buffer_TexelSize.xy) + 0.5 * _Buffer_TexelSize.xy;
-		st.zw = st.xy + _Buffer_TexelSize.xy;
-
-		float2 t = s - st.xy; //interpolating factors 
-
-		float4 tex11 = sampleBoundary(tex, st.xy);
-		float4 tex21 = sampleBoundary(tex, st.zy);
-		float4 tex12 = sampleBoundary(tex, st.xw);
-		float4 tex22 = sampleBoundary(tex, st.zw);
-
-		// bilinear interpolation
-		return lerp(lerp(tex11, tex21, t.x), lerp(tex12, tex22, t.x), t.y);
-	}
-
-	fixed4 advect(v2f_img i) : SV_Target
+	float4 advect(v2f_img i) : SV_Target
 	{
 		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
-		return _Dissipation * tex2D(_Buffer, pos) * getBoundary(pos, 1.5);
+		return _Dissipation * tex2D(_Buffer, pos);
 	}
 
-	void h4texRECTneighbors(sampler2D tex, half2 s,
-                        out half4 left,
-                        out half4 right,
-                        out half4 bottom,
-                        out half4 top)
+	float divergence(v2f_img i) : SV_Target
 	{
-	  left   = sampleBoundary(tex, s - half2(_Buffer_TexelSize.x, 0)); 
-	  right  = sampleBoundary(tex, s + half2(_Buffer_TexelSize.x, 0));
-	  bottom = sampleBoundary(tex, s - half2(0, _Buffer_TexelSize.y));
-	  top    = sampleBoundary(tex, s + half2(0, _Buffer_TexelSize.y));
+		float2 vL, vR, vB, vT;
+		vL = sampleVelocity(_Buffer, i.uv - half2(_Buffer_TexelSize.x, 0)); 
+	  	vR = sampleVelocity(_Buffer, i.uv + half2(_Buffer_TexelSize.x, 0));
+	  	vB = sampleVelocity(_Buffer, i.uv - half2(0, _Buffer_TexelSize.y));
+	  	vT = sampleVelocity(_Buffer, i.uv + half2(0, _Buffer_TexelSize.y));
+		return _InverseCellSize * 0.5 * ((vR.x - vL.x) + (vT.y - vB.y));
 	}
 
-
-	fixed4 divergence(v2f_img i) : SV_Target
+	float pressure(v2f_img i) : SV_Target
 	{
-		half4 vL, vR, vB, vT;
-		h4texRECTneighbors(_Buffer, i.uv, vL, vR, vB, vT);
-		half4 div = half4(_InverseCellSize * 0.5 * ((vR.x - vL.x) + (vT.y - vB.y)), 0, 0, 1);
-		return div;
-	}
-
-	fixed4 poissonSolver(v2f_img i) : SV_Target
-	{
-		//x = _Buffer; (Ax = b)
-		half4 xL, xR, xB, xT;
-		h4texRECTneighbors(_Buffer, i.uv, xL, xR, xB, xT);
-		half4 bC = tex2D(_Buffer2, i.uv);
-		half4 result = (xL + xR + xB + xT + _PoissonAlphaCoefficient * bC) * _InversePoissonBetaCoefficient;
-		result.a = 1.0;
-		return result;
-	}
-
-	float samplePressue(sampler2D pressure, float2 coord, float invresolution)
-	{
-		return tex2D(pressure, coord).x;
-	}
-
-	fixed4 pressure(v2f_img i) : SV_Target
-	{
-		float L = sampleBoundary(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0)).x;
-		float R = sampleBoundary(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0)).x;
-		float B = sampleBoundary(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y)).x;
-		float T = sampleBoundary(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y)).x;
+		float L = samplePressure(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0)).x;
+		float R = samplePressure(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0)).x;
+		float B = samplePressure(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y)).x;
+		float T = samplePressure(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y)).x;
 
 		float bC = tex2D(_Buffer2, i.uv).x;
 
-		return float4((L + R + B + T + _PoissonAlphaCoefficient * bC) * .25, 0, 0, 1);
+		return (L + R + B + T + _PoissonAlphaCoefficient * bC) * .25;
 	}
 
-	fixed4 gradient(v2f_img i) : SV_Target
+	float2 gradient(v2f_img i) : SV_Target
 	{
-		//pressure = _Buffer2
-		half4 pL, pR, pB, pT;
-		h4texRECTneighbors(_Buffer2, i.uv, pL, pR, pB, pT);
-		half2 grad = half2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
-		fixed4 uNew = tex2D(_Buffer, i.uv);
-		uNew.xy -= grad;
-		return uNew * getBoundary(i.uv);
+		float pL, pR, pB, pT;
+	  	pL = samplePressure(_Buffer2, i.uv - half2(_Buffer_TexelSize.x, 0)); 
+		pR = samplePressure(_Buffer2, i.uv + half2(_Buffer_TexelSize.x, 0));
+		pB = samplePressure(_Buffer2, i.uv - half2(0, _Buffer_TexelSize.y));
+		pT = samplePressure(_Buffer2, i.uv + half2(0, _Buffer_TexelSize.y));
+		float2 grad = float2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
+		float2 uNew = tex2D(_Buffer, i.uv).xy;
+		uNew -= grad;
+		return uNew;
 	}
 
-	fixed4 applyForce(v2f_img i) : SV_Target
+	float2 applyForce(v2f_img i) : SV_Target
 	{
-		fixed4 velocity = tex2D(_Buffer, i.uv);
-		if (distance(i.uv, _Force.xy) < 0.1)
+		float2 velocity = tex2D(_Buffer, i.uv).xy;
+		if (distance(i.uv, _Force.xy) < 0.05)
 		{
-		//	if (i.uv.x < _Force.x)
-				velocity.xy = _Force.zw * getBoundary(i.uv);
-		//	else
-			//velocity.xy = -_Force.zw;
+			velocity = _Force.zw;
 		}
 		return velocity;
 	}
@@ -169,9 +137,9 @@
 	fixed4 injectColor(v2f_img i) : SV_Target
 	{
 		fixed4 col = tex2D(_Buffer, i.uv);
-		if (distance(i.uv, _InjectPosition.xy) < 0.1)
+		if (distance(i.uv, _InjectPosition.xy) < 0.05)
 		{
-			return _InjectColor * getBoundary(i.uv);
+			return _InjectColor;
 		}
 		else
 		{
@@ -186,16 +154,7 @@
 		Tags { "RenderType"="Opaque" }
 		LOD 100
 
-		// 0. Boundary - Set velocity to 0 at the boundaries
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert_img
-			#pragma fragment boundary
-			ENDCG
-		}
-
-		// 1. Advection
+		// 0. Advection
 		Pass
 		{
 			CGPROGRAM
@@ -204,7 +163,7 @@
 			ENDCG
 		}
 
-		// 2. Divergence
+		// 1. Divergence
 		Pass
 		{
 			CGPROGRAM
@@ -213,7 +172,7 @@
 			ENDCG
 		}
 
-		// 3. Pressure
+		// 2. Pressure
 		Pass
 		{
 			CGPROGRAM
@@ -222,7 +181,7 @@
 			ENDCG
 		}
 
-		// 4. Gradient
+		// 3. Gradient
 		Pass
 		{
 			CGPROGRAM
@@ -231,7 +190,7 @@
 			ENDCG
 		}
 
-		// 5. Apply Force
+		// 4. Apply Force
 		Pass
 		{
 			CGPROGRAM
@@ -240,7 +199,7 @@
 			ENDCG
 		}
 
-		// 6. Inject Color
+		// 5. Inject Color
 		Pass
 		{
 			CGPROGRAM
