@@ -1,27 +1,21 @@
 ﻿Shader "Compute/FluidSolver"
 {
-	Properties
-	{
-		_Buffer ("Vector Field Buffer", 2D) = "black" {}
-		_Buffer2 ("Vector Field Buffer 2", 2D) = "black" {}
-		_Scale ("Scale", Float) = 1
-		_Offset ("Offset", Vector) = (0, 0, 0, 0)
-		_Step ("Step", Float) = 0
-		_InverseCellSize ("Inverse Cell Size", Float) = 0
-		_Dissipation ("Advection Dissipation", Float) = 1
-		_PoissonAlphaCoefficient ("Poisson Alpha Coefficient", Float) = 1
-		_InversePoissonBetaCoefficient ("Inverse Poisson Beta Coefficient", Float) = 1
-		_Force ("Force", Vector) = (0, 0, 0, 0)
-		_InjectColor ("Inject Color", Color) = (1, 1, 1, 1)
-		_InjectPosition ("Inject Position", Vector) = (0, 0, 0, 0)
-	}
-
 	CGINCLUDE
 	#include "UnityCG.cginc"
+	#pragma vertex vert
+	#define UV float3(i.uv, 0.5)
 
-	sampler2D	_Buffer;
+	v2f_img vert(appdata_img v)
+	{
+		v2f_img o;
+		o.pos = float4(v.vertex.xy * 2, 0, v.vertex.w);
+		o.uv = v.texcoord;
+		return o;
+	}
+
+	sampler3D	_Buffer;
 	float4		_Buffer_TexelSize;
-	sampler2D	_Buffer2;
+	sampler3D	_Buffer2;
 	float4		_Buffer2_TexelSize;
 	float		_Scale;
 	half2		_Offset;
@@ -33,8 +27,9 @@
 	float4		_Force;
 	fixed4		_InjectColor;
 	float2		_InjectPosition;
+	float		_Layer;
 
-	float2 sampleVelocity(sampler2D tex, float2 uv)
+	float2 sampleVelocity(sampler3D tex, float2 uv)
 	{
 		float2 offset = 0;
 		float2 scale = 1;
@@ -58,10 +53,10 @@
 			offset.y = -1;
 			scale.y = -1;
 		}
-		return scale * tex2D(tex, uv + offset * _Buffer_TexelSize).xy;
+		return scale * tex3D(tex, float3(uv + offset * _Buffer_TexelSize, 0.5)).xy;
 	}
 
-	float samplePressure(sampler2D tex, float2 uv)
+	float samplePressure(sampler3D tex, float2 uv)
 	{
 		float2 offset = 0;
 		if (uv.x < 0)
@@ -80,13 +75,13 @@
 		{
 			offset.y = -1;
 		}
-		return tex2D(tex, uv + offset * _Buffer_TexelSize).x;
+		return tex3D(tex, float3(uv + offset * _Buffer_TexelSize, 0.5)).x;
 	}
 
 	float4 advect(v2f_img i) : SV_Target
 	{
-		float2 pos = i.uv - _Step * _InverseCellSize * tex2D(_Buffer2, i.uv);
-		return _Dissipation * tex2D(_Buffer, pos);
+		float2 pos = i.uv - _Step * _InverseCellSize * tex3D(_Buffer2, float3(i.uv, 0.5));
+		return _Dissipation * tex3D(_Buffer, float3(pos, 0.5));
 	}
 
 	float divergence(v2f_img i) : SV_Target
@@ -106,7 +101,7 @@
 		float B = samplePressure(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y)).x;
 		float T = samplePressure(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y)).x;
 
-		float bC = tex2D(_Buffer2, i.uv).x;
+		float bC = tex3D(_Buffer2, float3(i.uv, 0.5)).x;
 
 		return (L + R + B + T + _PoissonAlphaCoefficient * bC) * .25;
 	}
@@ -119,15 +114,15 @@
 		pB = samplePressure(_Buffer2, i.uv - half2(0, _Buffer_TexelSize.y));
 		pT = samplePressure(_Buffer2, i.uv + half2(0, _Buffer_TexelSize.y));
 		float2 grad = float2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
-		float2 uNew = tex2D(_Buffer, i.uv).xy;
+		float2 uNew = tex3D(_Buffer, float3(i.uv, 0.5)).xy;
 		uNew -= grad;
 		return uNew;
 	}
 
 	float2 applyForce(v2f_img i) : SV_Target
 	{
-		float2 velocity = tex2D(_Buffer, i.uv).xy;
-		if (distance(i.uv, _Force.xy) < 0.05)
+		float2 velocity = tex3D(_Buffer, float3(i.uv, 0.5)).xy;
+		if (distance(i.uv, _Force.xy) < 0.1)
 		{
 			velocity = _Force.zw;
 		}
@@ -136,8 +131,8 @@
 
 	fixed4 injectColor(v2f_img i) : SV_Target
 	{
-		fixed4 col = tex2D(_Buffer, i.uv);
-		if (distance(i.uv, _InjectPosition.xy) < 0.05)
+		fixed4 col = tex3D(_Buffer, float3(i.uv, 0.5));
+		if (distance(i.uv, _InjectPosition.xy) < 0.1)
 		{
 			return _InjectColor;
 		}
@@ -147,6 +142,10 @@
 		}
 	}
 
+	fixed4 clear(v2f_img i) : SV_Target
+	{
+		return 0;
+	}
 	ENDCG
 
 	SubShader
@@ -158,7 +157,6 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment advect
 			ENDCG
 		}
@@ -167,7 +165,6 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment divergence
 			ENDCG
 		}
@@ -176,7 +173,6 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment pressure
 			ENDCG
 		}
@@ -185,7 +181,6 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment gradient
 			ENDCG
 		}
@@ -194,7 +189,6 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment applyForce
 			ENDCG
 		}
@@ -203,8 +197,15 @@
 		Pass
 		{
 			CGPROGRAM
-			#pragma vertex vert_img
 			#pragma fragment injectColor
+			ENDCG
+		}
+
+		// 6. Clear
+		Pass
+		{
+			CGPROGRAM
+			#pragma fragment clear
 			ENDCG
 		}
 	}
