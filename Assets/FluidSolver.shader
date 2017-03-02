@@ -3,7 +3,7 @@
 	CGINCLUDE
 	#include "UnityCG.cginc"
 	#pragma vertex vert
-	#define UV float3(i.uv, 0.5)
+	#define UV float3(i.uv, _Layer)
 
 	v2f_img vert(appdata_img v)
 	{
@@ -29,10 +29,10 @@
 	float2		_InjectPosition;
 	float		_Layer;
 
-	float2 sampleVelocity(sampler3D tex, float2 uv)
+	float3 sampleVelocity(sampler3D tex, float3 uv)
 	{
-		float2 offset = 0;
-		float2 scale = 1;
+		float3 offset = 0;
+		float3 scale = 1;
 		if (uv.x < 0)
 		{
 			offset.x = 1;
@@ -53,12 +53,22 @@
 			offset.y = -1;
 			scale.y = -1;
 		}
-		return scale * tex3D(tex, float3(uv + offset * _Buffer_TexelSize, 0.5)).xy;
+		if (uv.z < 0)
+		{
+			offset.z = 1;
+			scale.z = -1;
+		}
+		else if (uv.z > 1)
+		{
+			offset.z = -1;
+			scale.z = -1;
+		}
+		return scale * tex3D(tex, uv + offset * _Buffer_TexelSize).xyz;
 	}
 
-	float samplePressure(sampler3D tex, float2 uv)
+	float samplePressure(sampler3D tex, float3 uv)
 	{
-		float2 offset = 0;
+		float3 offset = 0;
 		if (uv.x < 0)
 		{
 			offset.x = 1;
@@ -75,64 +85,78 @@
 		{
 			offset.y = -1;
 		}
-		return tex3D(tex, float3(uv + offset * _Buffer_TexelSize, 0.5)).x;
+		if (uv.z < 0)
+		{
+			offset.z = 1;
+		}
+		else if (uv.z > 1)
+		{
+			offset.z = -1;
+		}
+		return tex3D(tex, uv + offset * _Buffer_TexelSize).x;
 	}
 
 	float4 advect(v2f_img i) : SV_Target
 	{
-		float2 pos = i.uv - _Step * _InverseCellSize * tex3D(_Buffer2, float3(i.uv, 0.5));
-		return _Dissipation * tex3D(_Buffer, float3(pos, 0.5));
+		float3 pos = UV - _Step * _InverseCellSize * tex3D(_Buffer2, UV);
+		return _Dissipation * tex3D(_Buffer, pos);
 	}
 
 	float divergence(v2f_img i) : SV_Target
 	{
-		float2 vL, vR, vB, vT;
-		vL = sampleVelocity(_Buffer, i.uv - half2(_Buffer_TexelSize.x, 0)); 
-	  	vR = sampleVelocity(_Buffer, i.uv + half2(_Buffer_TexelSize.x, 0));
-	  	vB = sampleVelocity(_Buffer, i.uv - half2(0, _Buffer_TexelSize.y));
-	  	vT = sampleVelocity(_Buffer, i.uv + half2(0, _Buffer_TexelSize.y));
-		return _InverseCellSize * 0.5 * ((vR.x - vL.x) + (vT.y - vB.y));
+		float3 vL, vR, vB, vT, vD, vU;
+		vL = sampleVelocity(_Buffer, UV - half3(_Buffer_TexelSize.x, 0, 0));
+	  	vR = sampleVelocity(_Buffer, UV + half3(_Buffer_TexelSize.x, 0, 0));
+	  	vB = sampleVelocity(_Buffer, UV - half3(0, _Buffer_TexelSize.y, 0));
+	  	vT = sampleVelocity(_Buffer, UV + half3(0, _Buffer_TexelSize.y, 0));
+	  	vD = sampleVelocity(_Buffer, UV - half3(0, 0, _Buffer_TexelSize.y));
+	  	vU = sampleVelocity(_Buffer, UV + half3(0, 0, _Buffer_TexelSize.y));
+		return _InverseCellSize * 0.5 * ((vR.x - vL.x) + (vT.y - vB.y) + (vU.z - vD.z));
 	}
 
 	float pressure(v2f_img i) : SV_Target
 	{
-		float L = samplePressure(_Buffer, i.uv - float2(_Buffer2_TexelSize.x, 0)).x;
-		float R = samplePressure(_Buffer, i.uv + float2(_Buffer2_TexelSize.x, 0)).x;
-		float B = samplePressure(_Buffer, i.uv - float2(0, _Buffer2_TexelSize.y)).x;
-		float T = samplePressure(_Buffer, i.uv + float2(0, _Buffer2_TexelSize.y)).x;
+		float L = samplePressure(_Buffer, UV - float3(_Buffer2_TexelSize.x, 0, 0)).x;
+		float R = samplePressure(_Buffer, UV + float3(_Buffer2_TexelSize.x, 0, 0)).x;
+		float B = samplePressure(_Buffer, UV - float3(0, _Buffer2_TexelSize.y, 0)).x;
+		float T = samplePressure(_Buffer, UV + float3(0, _Buffer2_TexelSize.y, 0)).x;
+		float D = samplePressure(_Buffer, UV - float3(0, 0, _Buffer2_TexelSize.y)).x;
+		float U = samplePressure(_Buffer, UV + float3(0, 0, _Buffer2_TexelSize.y)).x;
 
-		float bC = tex3D(_Buffer2, float3(i.uv, 0.5)).x;
+		float bC = tex3D(_Buffer2, UV).x;
 
-		return (L + R + B + T + _PoissonAlphaCoefficient * bC) * .25;
+		return (L + R + B + T + D + U + _PoissonAlphaCoefficient * bC) / 6;
 	}
 
-	float2 gradient(v2f_img i) : SV_Target
+	float3 gradient(v2f_img i) : SV_Target
 	{
-		float pL, pR, pB, pT;
-	  	pL = samplePressure(_Buffer2, i.uv - half2(_Buffer_TexelSize.x, 0)); 
-		pR = samplePressure(_Buffer2, i.uv + half2(_Buffer_TexelSize.x, 0));
-		pB = samplePressure(_Buffer2, i.uv - half2(0, _Buffer_TexelSize.y));
-		pT = samplePressure(_Buffer2, i.uv + half2(0, _Buffer_TexelSize.y));
-		float2 grad = float2(pR.x - pL.x, pT.x - pB.x) * _InverseCellSize * 0.5;
-		float2 uNew = tex3D(_Buffer, float3(i.uv, 0.5)).xy;
+		float pL, pR, pB, pT, pD, pU;
+	  	pL = samplePressure(_Buffer2, UV - half3(_Buffer_TexelSize.x, 0, 0)); 
+		pR = samplePressure(_Buffer2, UV + half3(_Buffer_TexelSize.x, 0, 0));
+		pB = samplePressure(_Buffer2, UV - half3(0, 0, _Buffer_TexelSize.y));
+		pT = samplePressure(_Buffer2, UV + half3(0, 0, _Buffer_TexelSize.y));
+		pD = samplePressure(_Buffer2, UV - half3(0, _Buffer_TexelSize.y, 0));
+		pU = samplePressure(_Buffer2, UV + half3(0, _Buffer_TexelSize.y, 0));
+		float3 grad = float3(pR - pL, pT - pB, pU - pT) * _InverseCellSize * 0.5;
+		float3 uNew = tex3D(_Buffer, UV).xyz;
 		uNew -= grad;
 		return uNew;
 	}
 
-	float2 applyForce(v2f_img i) : SV_Target
+	float3 applyForce(v2f_img i) : SV_Target
 	{
-		float2 velocity = tex3D(_Buffer, float3(i.uv, 0.5)).xy;
-		if (distance(i.uv, _Force.xy) < 0.1)
+		float3 velocity = tex3D(_Buffer, UV).xyz;
+		if (distance(UV, float3(_Force.xy, 0.5)) < 0.1)
 		{
-			velocity = _Force.zw;
+			velocity = float3(_Force.zw, 0);
 		}
 		return velocity;
 	}
 
 	fixed4 injectColor(v2f_img i) : SV_Target
 	{
-		fixed4 col = tex3D(_Buffer, float3(i.uv, 0.5));
-		if (distance(i.uv, _InjectPosition.xy) < 0.1)
+		fixed4 col = tex3D(_Buffer, UV);
+		if (distance(i.uv, float3(_InjectPosition.xy, 0.5)) < 0.1)
 		{
 			return _InjectColor;
 		}
