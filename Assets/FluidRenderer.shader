@@ -28,8 +28,8 @@
 				fixed4 col = 0;
 				for (float z = 0; z < 1.0; z += 0.1)
 				{
-					col += tex3D(_MainTex, float3(z, i.uv.yx));
-					//col += tex3D(_MainTex, float3(i.uv.xy, z));
+					//col += tex3D(_MainTex, float3(z, i.uv.yx));
+					col += tex3D(_MainTex, float3(i.uv.xy, z));
 				}
 				return col;
 				//return tex3D(_MainTex, float3(i.uv, _DepthPosition));

@@ -53,11 +53,11 @@ public class FluidSolver : MonoBehaviour
 	private CommandBuffer m_CommandBuffer;
 	public Material m_AMT;
 
-	RenderTexture CreateBuffer()
+	RenderTexture CreateBuffer(int texWidth, int texHeight, int texDepth)
 	{
-		RenderTexture rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		RenderTexture rt = new RenderTexture(texWidth, texHeight, 0, RenderTextureFormat.ARGBFloat);
 		rt.dimension = TextureDimension.Tex3D;
-		rt.volumeDepth = depth;
+		rt.volumeDepth = texDepth;
 		rt.filterMode = FilterMode.Trilinear;
 		Blit(rt, SolverPass.Clear);
 		return rt;
@@ -67,20 +67,20 @@ public class FluidSolver : MonoBehaviour
 	{
 		m_FluidSolver = new Material(shader);
 		m_CommandBuffer = new CommandBuffer();
-		m_VelocityBuffer = CreateBuffer();
-		m_DivergenceBuffer = CreateBuffer();
-		m_PressureBuffer = CreateBuffer();
-		m_ColorBuffer = CreateBuffer();
+		m_VelocityBuffer = CreateBuffer(width, height, depth);
+		m_DivergenceBuffer = CreateBuffer(width, height, depth);
+		m_PressureBuffer = CreateBuffer(width, height, depth);
+		m_ColorBuffer = CreateBuffer(128, 128, 128);
 		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
 		Camera.main.AddCommandBuffer(CameraEvent.AfterImageEffects, m_CommandBuffer);
 	}
 
 	void Blit(RenderTexture dest, SolverPass pass)
 	{
-		for (int i = 0; i < depth; i++)
+		for (int i = 0; i < dest.volumeDepth; i++)
 		{
 			m_CommandBuffer.SetRenderTarget(dest, 0, CubemapFace.Unknown, i);
-			m_CommandBuffer.SetGlobalFloat("_Layer", (i + 0.5f) / (float)depth);
+			m_CommandBuffer.SetGlobalFloat("_Layer", (i + 0.5f) / (float)dest.volumeDepth);
 			m_CommandBuffer.DrawMesh(quadMesh, Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * 2f), m_FluidSolver, 0, (int)pass);
 		}
 	}
