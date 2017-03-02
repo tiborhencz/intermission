@@ -8,7 +8,7 @@
 	SubShader
 	{
 		Tags { "RenderType"="Transparent" }
-		//Blend SrcAlpha OneMinusSrcAlpha
+		Blend SrcAlpha OneMinusSrcAlpha
 		LOD 100
 
 		Pass
@@ -25,8 +25,14 @@
 			
 			fixed4 frag (v2f_img i) : SV_Target
 			{
-				//return tex3D(_MainTex, float3(_DepthPosition, i.uv.yx));
-				return tex3D(_MainTex, float3(i.uv, _DepthPosition));
+				fixed4 col = 0;
+				for (float z = 0; z < 1.0; z += 0.1)
+				{
+					col += tex3D(_MainTex, float3(z, i.uv.yx));
+					//col += tex3D(_MainTex, float3(i.uv.xy, z));
+				}
+				return col;
+				//return tex3D(_MainTex, float3(i.uv, _DepthPosition));
 			}
 			ENDCG
 		}

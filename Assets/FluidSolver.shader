@@ -125,6 +125,7 @@
 
 		float bC = tex3D(_Buffer2, UV).x;
 
+
 		return (L + R + B + T + D + U + _PoissonAlphaCoefficient * bC) / 6;
 	}
 
@@ -133,11 +134,11 @@
 		float pL, pR, pB, pT, pD, pU;
 	  	pL = samplePressure(_Buffer2, UV - half3(_Buffer_TexelSize.x, 0, 0)); 
 		pR = samplePressure(_Buffer2, UV + half3(_Buffer_TexelSize.x, 0, 0));
-		pB = samplePressure(_Buffer2, UV - half3(0, 0, _Buffer_TexelSize.y));
-		pT = samplePressure(_Buffer2, UV + half3(0, 0, _Buffer_TexelSize.y));
-		pD = samplePressure(_Buffer2, UV - half3(0, _Buffer_TexelSize.y, 0));
-		pU = samplePressure(_Buffer2, UV + half3(0, _Buffer_TexelSize.y, 0));
-		float3 grad = float3(pR - pL, pT - pB, pU - pT) * _InverseCellSize * 0.5;
+		pB = samplePressure(_Buffer2, UV - half3(0, _Buffer_TexelSize.y, 0));
+		pT = samplePressure(_Buffer2, UV + half3(0, _Buffer_TexelSize.y, 0));
+		pD = samplePressure(_Buffer2, UV - half3(0, 0, _Buffer_TexelSize.y));
+		pU = samplePressure(_Buffer2, UV + half3(0, 0, _Buffer_TexelSize.y));
+		float3 grad = float3(pR - pL, pT - pB, pU - pD) * _InverseCellSize * 0.5;
 		float3 uNew = tex3D(_Buffer, UV).xyz;
 		uNew -= grad;
 		return uNew;
@@ -156,7 +157,7 @@
 	fixed4 injectColor(v2f_img i) : SV_Target
 	{
 		fixed4 col = tex3D(_Buffer, UV);
-		if (distance(i.uv, float3(_InjectPosition.xy, 0.5)) < 0.1)
+		if (distance(UV, float3(_InjectPosition.xy, 0.5)) < 0.1)
 		{
 			return _InjectColor;
 		}

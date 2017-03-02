@@ -53,33 +53,25 @@ public class FluidSolver : MonoBehaviour
 	private CommandBuffer m_CommandBuffer;
 	public Material m_AMT;
 
+	RenderTexture CreateBuffer()
+	{
+		RenderTexture rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
+		rt.dimension = TextureDimension.Tex3D;
+		rt.volumeDepth = depth;
+		rt.filterMode = FilterMode.Trilinear;
+		Blit(rt, SolverPass.Clear);
+		return rt;
+	}
+
 	void Start()
 	{
 		m_FluidSolver = new Material(shader);
-		m_VelocityBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		m_VelocityBuffer.volumeDepth = depth;
-		m_VelocityBuffer.filterMode = FilterMode.Bilinear;
-		m_VelocityBuffer.isVolume = true;
-		Debug.Log(m_VelocityBuffer.dimension);
-		//m_VelocityBuffer.filterMode = FilterMode.Point;
-		m_DivergenceBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		m_DivergenceBuffer.volumeDepth = depth;
-		m_DivergenceBuffer.isVolume = true;
-		m_PressureBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		m_PressureBuffer.volumeDepth = depth;
-		m_PressureBuffer.isVolume = true;
-		m_ColorBuffer = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		m_ColorBuffer.volumeDepth = depth;
-		m_ColorBuffer.isVolume = true;
-		m_TempTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat);
-		//GetComponent<MeshRenderer>().material.mainTexture = m_VelocityBuffer;
-		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
-		//GetComponent<MeshRenderer>().material.mainTexture = m_PressureBuffer;
-		//ApplyForce(new Vector2(0.5f, 0.5f), new Vector2(-1f, 1f));
-		Graphics.Blit(m_VelocityBuffer, m_VelocityBuffer);
 		m_CommandBuffer = new CommandBuffer();
-		//Blit(m_ColorBuffer, SolverPass.Clear);
-
+		m_VelocityBuffer = CreateBuffer();
+		m_DivergenceBuffer = CreateBuffer();
+		m_PressureBuffer = CreateBuffer();
+		m_ColorBuffer = CreateBuffer();
+		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
 		Camera.main.AddCommandBuffer(CameraEvent.AfterImageEffects, m_CommandBuffer);
 	}
 
@@ -88,10 +80,9 @@ public class FluidSolver : MonoBehaviour
 		for (int i = 0; i < depth; i++)
 		{
 			m_CommandBuffer.SetRenderTarget(dest, 0, CubemapFace.Unknown, i);
-			m_CommandBuffer.SetGlobalFloat("_Layer", (i + 0.5f) / 32f);
+			m_CommandBuffer.SetGlobalFloat("_Layer", (i + 0.5f) / (float)depth);
 			m_CommandBuffer.DrawMesh(quadMesh, Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * 2f), m_FluidSolver, 0, (int)pass);
 		}
-		Debug.Log("BLITED");
 	}
 
 	void ApplyForce(Vector2 position, Vector2 direction)
@@ -154,23 +145,18 @@ public class FluidSolver : MonoBehaviour
 		if (!simulate)
 			return;
 		Advect(Time.deltaTime, 0.999f, m_VelocityBuffer);
-		if (Input.GetMouseButton(0))// && Time.frameCount % 2 == 0)
+		if (Input.GetMouseButton(0))
 		{
 			Vector2 mouseDelta = (Vector2)Input.mousePosition - lastMousePosition;
 			Vector2 pos = new Vector2(Input.mousePosition.x / (float)Screen.width, Input.mousePosition.y / (float)Screen.height);
 			ApplyForce(pos, mouseDelta / 20);
-			InjectColor(pos, new Color(Time.time % 1f, (Time.time + 0.5f) % 1f, (Time.time + 0.25f) % 1f));
-			//m_CommandBuffer = new CommandBuffer();
-			//m_FluidSolver.SetTexture("_Buffer1", ColorTexture);
-			//Blit(m_ColorBuffer, SolverPass.Divergence);
-			//Graphics.ExecuteCommandBuffer(m_CommandBuffer);
+			InjectColor(pos, new Color(1, 1, 1, 0.2f));
 		}
 
 
 		lastMousePosition = Input.mousePosition;
 
 		Divergence(Time.deltaTime);
-
 		Pressure();
 		Gradient();
 		Advect(Time.deltaTime, 0.999f, m_ColorBuffer);
