@@ -31,6 +31,38 @@ public class FluidSolver : MonoBehaviour
 		public static int DepthPosition = Shader.PropertyToID("_DepthPosition");
 	}
 
+	class DoubleRenderTexture
+	{
+		RenderTexture m_RenderTexture0;
+		RenderTexture m_RenderTexture1;
+
+		public RenderTexture renderTexture0 { get { return m_RenderTexture0; } }
+		public RenderTexture renderTexture1 { get { return m_RenderTexture1; } }
+		public RenderTexture active { get { return m_First ? m_RenderTexture0 : m_RenderTexture1; } }
+
+		bool m_First = true;
+
+		public void Swap()
+		{
+			m_First = !m_First;
+		}
+
+		RenderTexture CreateTexture(int texWidth, int texHeight, int texDepth)
+		{
+			RenderTexture rt = new RenderTexture(texWidth, texHeight, 0, RenderTextureFormat.ARGBFloat);
+			rt.dimension = TextureDimension.Tex3D;
+			rt.volumeDepth = texDepth;
+			rt.filterMode = FilterMode.Trilinear;
+			return rt;
+		}
+
+		public DoubleRenderTexture(int texWidth, int texHeight, int texDepth)
+		{
+			m_RenderTexture0 = CreateTexture(texWidth, texHeight, texDepth);
+			m_RenderTexture1 = CreateTexture(texWidth, texHeight, texDepth);
+		}
+	}
+
 	public Shader shader;
 	public float viscosity = 1f;
 	[Range(1, 50)]
@@ -44,22 +76,20 @@ public class FluidSolver : MonoBehaviour
 	public int depth = 32;
 	public bool simulate = true;
 
-	private RenderTexture m_VelocityBuffer;
-	private RenderTexture m_DivergenceBuffer;
-	private RenderTexture m_PressureBuffer;
-	private RenderTexture m_ColorBuffer;
-	private RenderTexture m_TempTexture;
+	private DoubleRenderTexture m_VelocityBuffer;
+	private DoubleRenderTexture m_DivergenceBuffer;
+	private DoubleRenderTexture m_PressureBuffer;
+	private DoubleRenderTexture m_ColorBuffer;
+	private DoubleRenderTexture m_TempTexture;
 	private float m_GridScale = 1f;
 	private CommandBuffer m_CommandBuffer;
-	public Material m_AMT;
+	public Material m_ColorMaterial;
 
-	RenderTexture CreateBuffer(int texWidth, int texHeight, int texDepth)
+	DoubleRenderTexture CreateBuffer(int texWidth, int texHeight, int texDepth)
 	{
-		RenderTexture rt = new RenderTexture(texWidth, texHeight, 0, RenderTextureFormat.ARGBFloat);
-		rt.dimension = TextureDimension.Tex3D;
-		rt.volumeDepth = texDepth;
-		rt.filterMode = FilterMode.Trilinear;
-		Blit(rt, SolverPass.Clear);
+		DoubleRenderTexture rt =  new DoubleRenderTexture(texWidth, texHeight, texDepth);
+		Blit(rt.renderTexture0, SolverPass.Clear);
+		Blit(rt.renderTexture1, SolverPass.Clear);
 		return rt;
 	}
 
@@ -71,8 +101,9 @@ public class FluidSolver : MonoBehaviour
 		m_DivergenceBuffer = CreateBuffer(width, height, depth);
 		m_PressureBuffer = CreateBuffer(width, height, depth);
 		m_ColorBuffer = CreateBuffer(128, 128, 128);
-		GetComponent<MeshRenderer>().material.mainTexture = m_ColorBuffer;
-		Camera.main.AddCommandBuffer(CameraEvent.AfterImageEffects, m_CommandBuffer);
+		m_ColorMaterial = GetComponent<MeshRenderer>().material;
+		m_ColorMaterial.mainTexture = m_ColorBuffer.active;
+		Camera.main.AddCommandBuffer(CameraEvent.BeforeForwardOpaque, m_CommandBuffer);
 	}
 
 	void Blit(RenderTexture dest, SolverPass pass)
@@ -88,52 +119,58 @@ public class FluidSolver : MonoBehaviour
 	void ApplyForce(Vector2 position, Vector2 direction)
 	{
 		m_CommandBuffer.SetGlobalVector(Properties.Force, new Vector4(position.x, position.y, direction.x, direction.y));
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer);
-		Blit(m_VelocityBuffer, SolverPass.ApplyForce);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer.active);
+		m_VelocityBuffer.Swap();
+		Blit(m_VelocityBuffer.active, SolverPass.ApplyForce);
 	}
 
 	void InjectColor(Vector2 position, Color color)
 	{
 		m_CommandBuffer.SetGlobalVector(Properties.InjectPosition, new Vector4(position.x, position.y, 0, 0));
 		m_CommandBuffer.SetGlobalColor(Properties.InjectColor, color);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_ColorBuffer);
-		Blit(m_ColorBuffer, SolverPass.InjectColor);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_ColorBuffer.active);
+		m_ColorBuffer.Swap();
+		Blit(m_ColorBuffer.active, SolverPass.InjectColor);
 	}
 
-	void Advect(float step, float dissipation, RenderTexture target)
+	void Advect(float step, float dissipation, DoubleRenderTexture target)
 	{
 		m_CommandBuffer.SetGlobalFloat(Properties.Step, step);
 		m_CommandBuffer.SetGlobalFloat(Properties.InverseCellSize, 1f / m_GridScale);
 		m_CommandBuffer.SetGlobalFloat(Properties.Dissipation, dissipation);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, target);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_VelocityBuffer);
-		Blit(target, SolverPass.Advection);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, target.active);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_VelocityBuffer.active);
+		if (target == m_VelocityBuffer)
+			m_VelocityBuffer.Swap();
+		Blit(target.active, SolverPass.Advection);
 	}
 
 	void Divergence(float step)
 	{
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer.active);
 		m_CommandBuffer.SetGlobalFloat(Properties.InverseCellSize, 1f / m_GridScale);
-		Blit(m_DivergenceBuffer, SolverPass.Divergence);
+		Blit(m_DivergenceBuffer.active, SolverPass.Divergence);
 	}
 
 	void Pressure()
 	{
 		m_CommandBuffer.SetGlobalFloat(Properties.PoissonAlphaCoefficient, -m_GridScale * m_GridScale * viscosity);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_DivergenceBuffer);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_PressureBuffer);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_DivergenceBuffer.active);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_PressureBuffer.active);
+		m_PressureBuffer.Swap();
 		for (int i = 0; i < iterations; i++)
 		{
-			Blit(m_PressureBuffer, SolverPass.Pressure);
+			Blit(m_PressureBuffer.active, SolverPass.Pressure);
 		}
 	}
 
 	void Gradient()
 	{
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer);
-		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_PressureBuffer);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer, m_VelocityBuffer.active);
+		m_CommandBuffer.SetGlobalTexture(Properties.Buffer2, m_PressureBuffer.active);
 		m_CommandBuffer.SetGlobalFloat(Properties.InverseCellSize, 1f / m_GridScale);
-		Blit(m_VelocityBuffer, SolverPass.Gradient);
+		m_VelocityBuffer.Swap();
+		Blit(m_VelocityBuffer.active, SolverPass.Gradient);
 	}
 
 	Vector2 lastMousePosition;
@@ -142,6 +179,11 @@ public class FluidSolver : MonoBehaviour
 		m_CommandBuffer.Clear();
 		if (Input.GetKeyDown(KeyCode.Space))
 			simulate = !simulate;
+		if (Input.GetKeyDown(KeyCode.R))
+		{
+			Blit(m_ColorBuffer.renderTexture0, SolverPass.Clear);
+			Blit(m_ColorBuffer.renderTexture1, SolverPass.Clear);
+		}
 		if (!simulate)
 			return;
 		Advect(Time.deltaTime, 0.999f, m_VelocityBuffer);
@@ -152,7 +194,8 @@ public class FluidSolver : MonoBehaviour
 			ApplyForce(pos, mouseDelta / 20);
 			InjectColor(pos, new Color(1, 1, 1, 0.2f));
 		}
-
+		else
+		m_ColorBuffer.Swap();
 
 		lastMousePosition = Input.mousePosition;
 
@@ -160,12 +203,14 @@ public class FluidSolver : MonoBehaviour
 		Pressure();
 		Gradient();
 		Advect(Time.deltaTime, 0.999f, m_ColorBuffer);
+		m_CommandBuffer.SetGlobalTexture("_MainTex", m_ColorBuffer.active);
+		//m_ColorMaterial.mainTexture = m_ColorBuffer.active;
 	}
 
 	void _OnGUI()
 	{
-		Graphics.DrawTexture(new Rect(000, 0, 100, 100), m_VelocityBuffer);
-		Graphics.DrawTexture(new Rect(100, 0, 100, 100), m_PressureBuffer);
-		Graphics.DrawTexture(new Rect(200, 0, 100, 100), m_DivergenceBuffer);
+		Graphics.DrawTexture(new Rect(000, 0, 100, 100), m_VelocityBuffer.active);
+		Graphics.DrawTexture(new Rect(100, 0, 100, 100), m_PressureBuffer.active);
+		Graphics.DrawTexture(new Rect(200, 0, 100, 100), m_DivergenceBuffer.active);
 	}
 }
