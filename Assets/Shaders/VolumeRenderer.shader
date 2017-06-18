@@ -70,11 +70,12 @@
 	float _Low;
 	float _DensitySpectrumOffset;
 	float _SpecPower;
+	float3 _LightPos;
 
 
 	float getDensity(in float3 pos)
 	{
-		return _Volume.SampleLevel(_Sampler_Volume, pos, 0.);
+		return _Volume.SampleLevel(_Sampler_Volume, pos, 0.).r;
 	}
 
 	float3 getGradient(in float3 pos)
@@ -83,6 +84,37 @@
 		float Y = getDensity(pos + float3(0., _Volume_TexelSize.y, 0.)) - getDensity(pos - float3(0., _Volume_TexelSize.y, 0.));
 		float Z = getDensity(pos + float3(0., 0., _Volume_TexelSize.z)) - getDensity(pos - float3(0., 0., _Volume_TexelSize.z));
 		return normalize(float3(X, Y, Z));
+	}
+
+	float calcAO(in float3 pos, in float3 nor)
+	{
+		float occ = 0.0;
+	    float sca = 1.0;
+	    for (int i = 0; i < 5; i++)
+	    {
+	        float hr = 0.06 + 0.1 * float(i) / 5.0;
+	        float3 aopos =  nor * -hr + pos;
+	        float dd = getDensity(aopos);
+	        occ += (saturate(dd - _Low)) * sca;
+	        sca *= 0.9;
+	    }
+	    return saturate(occ);
+	}
+
+	float3 isLit(in float3 pos, in float3 n, in float3 lightDir)
+	{
+		float3 p = pos + n * -.025;
+		float light = 1.;
+		float st = 0.9;
+		for (int i = 0; i < 16; i++, p += lightDir * -0.025)
+		{
+			float dd = getDensity(p);
+			if (dd > _Low)
+			{
+				light *= (1. - dd*dd);
+			}
+		}
+		return saturate(light);
 	}
 
 	fixed4 frag_density(in Varyings input) : SV_Target
@@ -108,7 +140,7 @@
 			float4 col = _DensitySpectrum.SampleLevel(_Sampler_DensitySpectrum, float2(sample.r + _DensitySpectrumOffset, .5), 0.);
 			col = min(col * sample.r * _DensityAmplification, 1.);
 			output += (1.0f - output.a) * col * visible;
-			if (visible && !hit)
+			if (sample.r > _Low && !hit)
 			{
 				hitPos = front + p;
 				hit = true;
@@ -119,15 +151,19 @@
 
 		float3 n = getGradient(hitPos);
 
-		float3 lightPos = 1.;
+		float3 lightPos = _LightPos;
 		float diffuseTerm = dot(lightPos, n) * .7;
 
-  		float3 lightDir = normalize(hitPos - lightPos);
-  		float3 h = normalize(normalize(_WorldSpaceCameraPos.xyz - hitPos) - lightDir);
+  		float3 lightDir = normalize(lightPos - hitPos);
+  		float3 h = normalize(lightDir - normalize(_WorldSpaceCameraPos.xyz - hitPos));
  
   		float specTerm = pow(saturate(dot(h, n)), _SpecPower);
 
+  		float occ = calcAO(hitPos, n);
+  		float shadowTerm = isLit(hitPos, n, lightDir);
 		output.rgb = saturate(output.rgb + diffuseTerm * 0.5 + specTerm * 0.6);
+  		output.rgb -= occ;
+  		output.rgb *= 0.6 + 0.4 * shadowTerm;
 		return fixed4(output.rgb, output.a );
 		//return fixed4(output.rgb * (output.a > 0.01), output.a * _Amplification * rcpIter);
 	}

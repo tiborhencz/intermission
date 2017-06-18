@@ -43,6 +43,7 @@ public class VolumeRenderer : MonoBehaviour
 	public float cutLimitMax = 1f;
 	[Range(0, 100)]
 	public float specularPower = 1f;
+	public Vector3 lightPos;
 
 
 
@@ -122,6 +123,7 @@ public class VolumeRenderer : MonoBehaviour
 		volumeRenderMaterial.SetFloat("_CutLimitMin", cutLimitMin);
 		volumeRenderMaterial.SetFloat("_CutLimitMax", cutLimitMax);
 		volumeRenderMaterial.SetFloat("_SpecPower", specularPower);
+		volumeRenderMaterial.SetVector("_LightPos", lightPos);
 		volumeRenderMaterial.SetPass((int)drawMode);
 		Graphics.DrawMeshNow(mesh, transform.localToWorldMatrix);
 

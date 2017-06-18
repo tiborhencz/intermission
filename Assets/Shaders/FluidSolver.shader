@@ -147,7 +147,7 @@
 	float3 applyForce(v2f_img i) : SV_Target
 	{
 		float3 velocity = tex3D(_Buffer, UV).xyz;
-		if (distance(UV, float3(_Force.xy, 0.5)) < 0.1)
+		if (distance(UV, float3(_Force.xy, 0.5)) < 0.075)
 		{
 			velocity = float3(_Force.zw, 0);
 		}
@@ -157,7 +157,7 @@
 	fixed4 injectColor(v2f_img i) : SV_Target
 	{
 		fixed4 col = tex3D(_Buffer, UV);
-		if (distance(UV, float3(_InjectPosition.xy, 0.5)) < 0.1)
+		if (distance(UV, float3(_InjectPosition.xy, 0.5)) < 0.075)
 		{
 			return _InjectColor;
 		}
